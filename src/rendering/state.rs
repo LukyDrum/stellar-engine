@@ -1,14 +1,20 @@
-use std::sync::Arc;
+use std::{mem, num::NonZeroU64, sync::Arc};
 
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::rendering::{index::Index, vertex::Vertex};
+use crate::rendering::{
+    index::Index,
+    queue::{RenderBuffers, RenderQueue},
+    vertex::Vertex,
+};
 
-const INITIAL_VERTEX_BUFFER_SIZE: usize = std::mem::size_of::<Vertex>() * 32;
-const INITIAL_INDEX_BUFFER_SIZE: usize = std::mem::size_of::<Index>() * 32;
+const INITIAL_VERTEX_BUFFER_SIZE: usize = mem::size_of::<Vertex>() * 32;
+const INITIAL_INDEX_BUFFER_SIZE: usize = mem::size_of::<Index>() * 32;
 
 pub struct RendererState {
+    pub render_queue: RenderQueue,
+
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -17,10 +23,13 @@ pub struct RendererState {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    indices_count: u32,
     window: Arc<Window>,
 }
 
 impl RendererState {
+    const BUFFER_GROW: usize = 2;
+
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let size = window.inner_size();
 
@@ -113,18 +122,20 @@ impl RendererState {
         });
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
+            label: Some("Main Vertex Buffer"),
             contents: &bytemuck::zeroed_vec(INITIAL_VERTEX_BUFFER_SIZE),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
+            label: Some("Main Index Buffer"),
             contents: &bytemuck::zeroed_vec(INITIAL_INDEX_BUFFER_SIZE),
-            usage: wgpu::BufferUsages::INDEX,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         });
 
         Ok(Self {
+            render_queue: RenderQueue::default(),
+
             surface,
             device,
             queue,
@@ -133,6 +144,7 @@ impl RendererState {
             render_pipeline,
             vertex_buffer,
             index_buffer,
+            indices_count: 0,
             window,
         })
     }
@@ -152,6 +164,69 @@ impl RendererState {
         if !self.is_surface_configured {
             return Ok(());
         }
+
+        // Take buffers from `RenderQueue`
+        let RenderBuffers { vertices, indices } = self
+            .render_queue
+            .buffers(self.config.width as f32, self.config.height as f32);
+        let vertices_bytes_size = vertices.len() * mem::size_of::<Vertex>();
+        let indices_bytes_size = indices.len() * mem::size_of::<Index>();
+
+        // Grow the GPU buffers if needed
+        let vertex_buffer_size = self.vertex_buffer.size() as usize;
+        if vertices_bytes_size > vertex_buffer_size {
+            self.vertex_buffer =
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Main Vertex Buffer"),
+                        contents: &bytemuck::zeroed_vec(vertex_buffer_size * Self::BUFFER_GROW),
+                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    });
+        }
+
+        let index_buffer_size = self.index_buffer.size() as usize;
+        if indices_bytes_size > index_buffer_size {
+            self.index_buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Main Index Buffer"),
+                    contents: &bytemuck::zeroed_vec(index_buffer_size * Self::BUFFER_GROW),
+                    usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                });
+        }
+
+        let nearest_4 = |mut val: usize| {
+            while val % 4 != 0 {
+                val += 1;
+            }
+            val
+        };
+
+        // Write data into the GPU buffers
+        if let Some(size) = NonZeroU64::new(nearest_4(vertices_bytes_size) as u64) {
+            if let Some(mut write_view) = self.queue.write_buffer_with(&self.vertex_buffer, 0, size)
+            {
+                for (buffer_chunk, vertex) in write_view
+                    .chunks_mut(mem::size_of::<Vertex>())
+                    .zip(vertices.into_iter())
+                {
+                    buffer_chunk.copy_from_slice(bytemuck::bytes_of(&vertex));
+                }
+            }
+        }
+        if let Some(size) = NonZeroU64::new(nearest_4(indices_bytes_size) as u64) {
+            self.indices_count = indices.len() as u32;
+            if let Some(mut write_view) = self.queue.write_buffer_with(&self.index_buffer, 0, size)
+            {
+                for (buffer_chunk, index) in write_view
+                    .chunks_mut(mem::size_of::<Index>())
+                    .zip(indices.into_iter())
+                {
+                    buffer_chunk.copy_from_slice(bytemuck::bytes_of(&index));
+                }
+            }
+        }
+        self.queue.submit([]);
 
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -188,12 +263,16 @@ impl RendererState {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..0, 0, 0..1);
+            render_pass.draw_indexed(0..self.indices_count, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         Ok(())
+    }
+
+    pub fn window_size(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
     }
 }

@@ -1,6 +1,12 @@
 use std::sync::Arc;
 
-use stellar_engine::rendering::RendererState;
+use stellar_engine::{
+    math::Vector2,
+    rendering::{
+        RendererState,
+        shapes::{Shape, Triangle},
+    },
+};
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -56,6 +62,23 @@ impl ApplicationHandler<RendererState> for App {
                 ..
             } => match (code, state.is_pressed()) {
                 (KeyCode::Escape, true) => event_loop.exit(),
+                // Add shape on space
+                (KeyCode::Space, true) => {
+                    if let Some(state) = &mut self.state {
+                        let rand_vector2 = || {
+                            let (width, height) = state.window_size();
+                            let x = fastrand::u32(0..width) as f32;
+                            let y = fastrand::u32(0..height) as f32;
+                            Vector2::new(x, y)
+                        };
+
+                        let shape = Shape::Triangle(Triangle {
+                            points: [rand_vector2(), rand_vector2(), rand_vector2()],
+                        });
+
+                        state.render_queue.add(shape);
+                    }
+                }
                 _ => {}
             },
             _ => {}

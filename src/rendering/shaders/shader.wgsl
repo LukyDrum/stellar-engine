@@ -21,10 +21,5 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let x = in.clip_position.x - 500.0;
-    let y = in.clip_position.y - 500.0;
-    let r = sqrt(x * x + y * y);
-    let mul = step(100.0, r);
-
-    return vec4<f32>(in.color * mul, 1.0);
+    return vec4<f32>(in.color, 1.0);
 }
