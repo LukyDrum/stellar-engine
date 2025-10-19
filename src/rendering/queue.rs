@@ -31,15 +31,17 @@ impl RenderQueue {
         for shape in &self.shapes {
             let local_vertices = shape.get_vertices(screen_width, screen_height);
             let local_indices = shape.get_indices();
-            let indices_count = local_indices.len();
             let local_indices = local_indices
                 .into_iter()
                 .map(move |index| next_index + index);
 
-            next_index += indices_count as u16;
-            vertices.extend_from_slice(&local_vertices);
+            next_index += local_vertices.len() as u16;
+            vertices.extend(local_vertices);
             indices.extend(local_indices);
         }
+
+        dbg!(&vertices);
+        dbg!(&indices);
 
         RenderBuffers { vertices, indices }
     }
