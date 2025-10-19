@@ -1,8 +1,13 @@
-use crate::rendering::{index::Index, shapes::triangle::Triangle, vertex::Vertex};
+use crate::rendering::{
+    index::Index,
+    shapes::{quad::Quad, triangle::Triangle},
+    vertex::Vertex,
+};
 
 #[derive(Debug)]
 pub enum Shape {
     Triangle(Triangle),
+    Quad(Quad),
 }
 
 impl Shape {
@@ -13,12 +18,14 @@ impl Shape {
     ) -> Vec<Vertex> {
         match self {
             Shape::Triangle(triangle) => triangle.get_vertices(screen_width, screen_height).into(),
+            Shape::Quad(quad) => quad.get_vertices(screen_width, screen_height).into(),
         }
     }
 
     pub(in crate::rendering) fn get_indices(&self) -> Vec<Index> {
         match self {
             Shape::Triangle(triangle) => triangle.get_indices().into(),
+            Shape::Quad(quad) => quad.get_indices().into(),
         }
     }
 }

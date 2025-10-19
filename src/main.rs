@@ -4,7 +4,7 @@ use stellar_engine::{
     math::Vector2,
     rendering::{
         RendererState,
-        shapes::{Shape, Triangle},
+        shapes::{Quad, Shape, Triangle},
     },
 };
 use winit::{
@@ -18,6 +18,7 @@ use winit::{
 #[derive(Default)]
 pub struct App {
     state: Option<RendererState>,
+    mouse_position: Vector2<f32>,
 }
 
 impl ApplicationHandler<RendererState> for App {
@@ -51,6 +52,25 @@ impl ApplicationHandler<RendererState> for App {
             WindowEvent::Resized(size) => state.resize(size.width, size.height),
             WindowEvent::RedrawRequested => {
                 let _ = state.render();
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(state) = &self.state {
+                    let (width, height) = state.window_size();
+                    let (width, height) = (width as f32, height as f32);
+                    let x = position.x as f32 - (width * 0.5);
+                    let y = (height - position.y as f32) - (height * 0.5);
+
+                    self.mouse_position = Vector2::new(x, y);
+                }
+            }
+            WindowEvent::MouseInput { state, .. } => {
+                if state.is_pressed() {
+                    println!("{:?}", self.mouse_position);
+                    let shape = Shape::Quad(Quad::square(self.mouse_position, 50.0));
+                    if let Some(state) = &mut self.state {
+                        state.render_queue.add(shape);
+                    }
+                }
             }
             WindowEvent::KeyboardInput {
                 event:

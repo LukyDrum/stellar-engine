@@ -1,6 +1,8 @@
+mod quad;
 mod shape;
 mod triangle;
 
+pub use quad::Quad;
 pub use shape::Shape;
 pub use triangle::Triangle;
 
@@ -12,8 +14,8 @@ pub(super) fn point_to_vertex(
     screen_height: f32,
     color: [f32; 3],
 ) -> Vertex {
-    let x = (point.x / screen_width) * 2.0 - 1.0;
-    let y = (point.y / screen_height) * 2.0 - 1.0;
+    let x = point.x / (screen_width * 0.5);
+    let y = point.y / (screen_height * 0.5);
 
     Vertex {
         position: [x, y],
