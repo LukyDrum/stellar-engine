@@ -7,6 +7,8 @@ pub struct RenderQueue {
     shapes: Vec<Shape>,
 }
 
+/// Returned by `RenderQueue`.
+/// Contains vectors of the new vertices and indices.
 pub(super) struct RenderBuffers {
     pub(super) vertices: Vec<Vertex>,
     pub(super) indices: Vec<Index>,
@@ -27,29 +29,16 @@ impl RenderQueue {
         let mut next_index = 0;
 
         for shape in &self.shapes {
-            let (local_vertices, local_indices) = match shape {
-                Shape::Triangle(triangle) => {
-                    let local_vertices = triangle
-                        .points
-                        .iter()
-                        .map(|point| {
-                            let position = [
-                                (point.x / screen_width) * 2.0 - 1.0,
-                                (point.y / screen_height) * 2.0 - 1.0,
-                            ];
-                            let color = [0.75, 0.75, 0.0]; // TODO: Hardcoded value - change later
-                            Vertex { position, color }
-                        })
-                        .collect::<Vec<_>>();
-                    let local_indices = [next_index, next_index + 1, next_index + 2];
+            let local_vertices = shape.get_vertices(screen_width, screen_height);
+            let local_indices = shape.get_indices();
+            let indices_count = local_indices.len();
+            let local_indices = local_indices
+                .into_iter()
+                .map(move |index| next_index + index);
 
-                    (local_vertices, local_indices)
-                }
-            };
-
-            next_index += local_indices.len() as u16;
+            next_index += indices_count as u16;
             vertices.extend_from_slice(&local_vertices);
-            indices.extend_from_slice(&local_indices);
+            indices.extend(local_indices);
         }
 
         RenderBuffers { vertices, indices }
